@@ -56,19 +56,7 @@ class NuInSegDataset(Dataset):
         )
         
         # Ensure images and masks match
-        assert np.all([img_path.split('/')[-1] == mask_path.split('/')[-1] for img_path, mask_path in zip(self.train_img_paths, self.train_mask_paths)])
-        assert np.all([img_path.split('/')[-1] == mask_path.split('/')[-1] for img_path, mask_path in zip(self.val_img_paths, self.val_mask_paths)])
-        assert np.all([img_path.split('/')[-1] == mask_path.split('/')[-1] for img_path, mask_path in zip(self.test_img_paths, self.test_mask_paths)])
-
-        assert set(self.train_img_paths).isdisjoint(set(self.val_img_paths))
-        assert set(self.train_img_paths).isdisjoint(set(self.test_img_paths))
-        assert set(self.val_img_paths).isdisjoint(set(self.test_img_paths))
-
-        assert len(self.train_img_paths) + len(self.val_img_paths) + len(self.test_img_paths) == len(self.img_paths)
-        assert len(self.train_mask_paths) + len(self.val_mask_paths) + len(self.test_mask_paths) == len(self.mask_paths)
-        assert len(self.train_img_paths) == len(self.train_mask_paths)
-        assert len(self.val_img_paths) == len(self.val_mask_paths)
-        assert len(self.test_img_paths) == len(self.test_mask_paths)
+        self.sanity_check()
 
         # Select the dataset depending on whether we need training, validation, or test set
         if train:
@@ -83,6 +71,27 @@ class NuInSegDataset(Dataset):
 
     def __len__(self):
         return len(self.img_paths)
+    
+    def sanity_check(self):
+        """
+        Checks for duplicates between the training, validation, and test sets.
+        """
+
+        assert np.all([img_path.split('/')[-1] == mask_path.split('/')[-1] for img_path, mask_path in zip(self.train_img_paths, self.train_mask_paths)])
+        assert np.all([img_path.split('/')[-1] == mask_path.split('/')[-1] for img_path, mask_path in zip(self.val_img_paths, self.val_mask_paths)])
+        assert np.all([img_path.split('/')[-1] == mask_path.split('/')[-1] for img_path, mask_path in zip(self.test_img_paths, self.test_mask_paths)])
+
+        assert set(self.train_img_paths).isdisjoint(set(self.val_img_paths))
+        assert set(self.train_img_paths).isdisjoint(set(self.test_img_paths))
+        assert set(self.val_img_paths).isdisjoint(set(self.test_img_paths))
+
+        assert len(self.train_img_paths) + len(self.val_img_paths) + len(self.test_img_paths) == len(self.img_paths)
+        assert len(self.train_mask_paths) + len(self.val_mask_paths) + len(self.test_mask_paths) == len(self.mask_paths)
+        assert len(self.train_img_paths) == len(self.train_mask_paths)
+        assert len(self.val_img_paths) == len(self.val_mask_paths)
+        assert len(self.test_img_paths) == len(self.test_mask_paths)
+        
+        return None
 
     def __getitem__(self, idx):
         """
