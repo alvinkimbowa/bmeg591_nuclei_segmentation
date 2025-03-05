@@ -135,6 +135,14 @@ def load_checkpoint(model, optimizer, checkpoint_path):
         print("No checkpoint found, starting from scratch.")
         return model, optimizer, 0, 0.0
 
+def save_model(model, optimizer, epoch, best_val_dice, checkpoint_path):
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'best_val_dice': best_val_dice,
+    }, checkpoint_path)
+
 def main():
     args = arguments_parser()
 
@@ -181,29 +189,17 @@ def main():
         # Save the model if validation dice is better
         if val_dice > best_val_dice:
             best_val_dice = val_dice
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'best_val_dice': best_val_dice,
-            }, os.path.join(args.log_dir, 'best_unet.pth'))
+            save_model(model, optimizer, epoch, best_val_dice, os.path.join(args.log_dir, 'best_unet.pth'))
         
         # Save model checkpoint every n epochs
         if epoch % args.save_every == 0:
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'best_val_dice': best_val_dice,
-            }, os.path.join(args.log_dir, 'last_unet.pth'))
+            save_model(model, optimizer, epoch, best_val_dice, os.path.join(args.log_dir, 'last_unet.pth'))
 
+    visualize_predictions(model, val_dataloader, device, writer, epoch)
+    writer.close()
     # Save final model
-    torch.save({
-        'epoch': args.epochs,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'best_val_dice': best_val_dice,
-    }, os.path.join(args.log_dir, 'final_unet.pth'))
+    
+    save_model(model, optimizer, epoch, best_val_dice, os.path.join(args.log_dir, 'last_unet.pth'))
 
 if __name__ == "__main__":
     main()
