@@ -1,0 +1,11 @@
+scikit-image
+scikit-learn
+numpy
+pillow
+pandas
+matplotlib
+torch
+torchvision
+tqdm
+tensorboard
+monai
