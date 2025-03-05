@@ -26,6 +26,7 @@ def arguments_parser():
     parser.add_argument('--val_size', type=float, default=0.2, help='Fraction of data to use for validation')
     parser.add_argument('--test_size', type=float, default=0.1, help='Fraction of data to use for testing')
     parser.add_argument('--log_dir', type=str, default='./runs/unet_experiment', help='Directory to store TensorBoard logs')
+    parser.add_argument('--resume', type=str, default='', help='Path to the checkpoint to resume training')
     return parser.parse_args()
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device, writer, epoch):
@@ -120,6 +121,19 @@ def visualize_predictions(model, dataloader, device, writer, epoch):
 
     writer.add_image(f'Predictions/epoch_{epoch}', grid, epoch)
 
+def load_checkpoint(model, optimizer, checkpoint_path):
+    if os.path.exists(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        epoch = checkpoint['epoch']
+        best_val_dice = checkpoint['best_val_dice']
+        print(f"Resuming training from epoch {epoch}, Best Validation Dice: {best_val_dice:.4f}")
+        return model, optimizer, epoch, best_val_dice
+    else:
+        print("No checkpoint found, starting from scratch.")
+        return model, optimizer, 0, 0.0
+
 def main():
     args = arguments_parser()
 
@@ -152,8 +166,10 @@ def main():
     writer = SummaryWriter(log_dir=args.log_dir)
 
     # Training loop
+    ckpt = args.resume if args.resume else os.path.join(args.log_dir, 'last_unet.pth')
+    model, optimizer, start_epoch, best_val_dice = load_checkpoint(model, optimizer, ckpt)
     best_val_dice = 0.0
-    for epoch in tqdm(range(args.epochs), desc='Epochs'):
+    for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch'):
         train_one_epoch(model, train_dataloader, criterion, optimizer, device, writer, epoch)
         val_dice = validate(model, val_dataloader, criterion, device, writer, epoch)
         visualize_predictions(model, val_dataloader, device, writer, epoch)
@@ -161,12 +177,28 @@ def main():
         # Save the model if validation dice is better
         if val_dice > best_val_dice:
             best_val_dice = val_dice
-            torch.save(model.state_dict(), os.path.join(args.log_dir, 'best_unet.pth'))
-        else:
-            torch.save(model.state_dict(), os.path.join(args.log_dir, 'last_unet.pth'))
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_val_dice': best_val_dice,
+            }, os.path.join(args.log_dir, 'best_unet.pth'))
+        
+        # Save model checkpoint
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_val_dice': best_val_dice,
+        }, os.path.join(args.log_dir, 'last_unet.pth'))
 
     # Save final model
-    torch.save(model.state_dict(), os.path.join(args.log_dir, 'final_unet.pth'))
+    torch.save({
+        'epoch': args.epochs,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'best_val_dice': best_val_dice,
+    }, os.path.join(args.log_dir, 'final_unet.pth'))
 
 if __name__ == "__main__":
     main()
