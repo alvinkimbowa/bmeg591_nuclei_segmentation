@@ -79,7 +79,7 @@ def main(args):
             
             # Calculate loss
             loss = criterion(outputs, masks)
-            train_dice_metric(y_pred=outputs, y=masks)
+            train_dice_metric(y_pred=outputs > 0.5, y=masks)
 
             running_loss += loss.item()
 
@@ -93,8 +93,8 @@ def main(args):
         # Log the loss to TensorBoard
         writer.add_scalar('Loss/train', running_loss / len(train_dataloader), epoch)
         writer.add_scalar('Dice/train', train_dice, epoch)
-        print(f"Train Loss: {running_loss / len(train_dataloader)}")
-        print(f"Train Dice: {train_dice}")
+        print(f"Train Loss: {running_loss / len(train_dataloader):.4f}")
+        print(f"Train Dice: {train_dice:.4f}")
 
         # Validation loop
         model.eval()
@@ -107,7 +107,7 @@ def main(args):
                 outputs = model(images)
                 loss = criterion(outputs, masks)
                 val_loss += loss.item()
-                val_dice_metric(y_pred=outputs, y=masks)
+                val_dice_metric(y_pred=outputs > 0.5, y=masks)
 
         val_dice = val_dice_metric.aggregate().item()
         val_dice_metric.reset()
@@ -115,8 +115,8 @@ def main(args):
         # Log the validation loss to TensorBoard
         writer.add_scalar('Loss/val', val_loss / len(val_dataloader), epoch)
         writer.add_scalar('Dice/val', val_dice, epoch)
-        print(f"Val Loss: {val_loss / len(val_dataloader)}")
-        print(f"Val Dice: {val_dice}")
+        print(f"Val Loss: {val_loss / len(val_dataloader):.4f}")
+        print(f"Val Dice: {val_dice:.4f}")
 
         # Save the model if validation dice is better
         if val_dice > best_val_dice:
