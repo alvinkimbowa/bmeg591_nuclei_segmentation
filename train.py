@@ -9,6 +9,8 @@ from torchvision.transforms import v2
 from monai.metrics import DiceMetric
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+import torchvision.utils as vutils
+import random
 
 from unet import UNet
 from dataset import NuInSegDataset
@@ -24,8 +26,6 @@ def arguments_parser():
     parser.add_argument('--val_size', type=float, default=0.2, help='Fraction of data to use for validation')
     parser.add_argument('--test_size', type=float, default=0.1, help='Fraction of data to use for testing')
     parser.add_argument('--log_dir', type=str, default='./runs/unet_experiment', help='Directory to store TensorBoard logs')
-
-
     return parser.parse_args()
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device, writer, epoch):
@@ -82,6 +82,44 @@ def validate(model, dataloader, criterion, device, writer, epoch):
     
     return val_dice
 
+def visualize_predictions(model, dataloader, device, writer, epoch):
+    model.eval()
+    
+    images_list, masks_list, pred_masks_list = [], [], []
+    for _ in range(4):  # Select 8 images
+        random_batch = random.choice(list(dataloader))
+        images, masks = random_batch
+        idx = random.randint(0, images.shape[0] - 1)
+        images_list.append(images[idx])
+        masks_list.append(masks[idx])
+        
+    images = torch.stack(images_list).to(device)
+    masks = torch.stack(masks_list).to(device)
+    
+    with torch.no_grad():
+        outputs = torch.sigmoid(model(images))
+        pred_masks = (outputs > 0.5).float()
+    
+    # Convert single channel mask and predicted mask to 3 channels
+    images = images.detach().cpu()
+    masks = masks.repeat(1, 3, 1, 1).detach().cpu()
+    pred_masks = pred_masks.repeat(1, 3, 1, 1).detach().cpu()
+    
+    # Prepare a list to hold the images, masks, and predictions for each row
+    combined = []
+    for i in range(len(images_list)):
+        combined.append(images[i].unsqueeze(0))         # Image
+        combined.append(masks[i].unsqueeze(0))      # Mask
+        combined.append(pred_masks[i].unsqueeze(0)) # Predicted mask
+
+    # Concatenate the list into a single tensor
+    combined = torch.cat(combined, dim=0)
+    
+    # Create the grid with 3 images per row (img, mask, pred)
+    grid = vutils.make_grid(combined, nrow=3)
+
+    writer.add_image(f'Predictions/epoch_{epoch}', grid, epoch)
+
 def main():
     args = arguments_parser()
 
@@ -118,6 +156,7 @@ def main():
     for epoch in tqdm(range(args.epochs), desc='Epochs'):
         train_one_epoch(model, train_dataloader, criterion, optimizer, device, writer, epoch)
         val_dice = validate(model, val_dataloader, criterion, device, writer, epoch)
+        visualize_predictions(model, val_dataloader, device, writer, epoch)
 
         # Save the model if validation dice is better
         if val_dice > best_val_dice:
