@@ -1,3 +1,25 @@
+# SAM-NuInsSeg
+
+To get started, clone the repo and install the requirements, preferrably in a virtual environment:
+
+
+```
+git clone https://github.com/alvinkimbowa/bmeg591_nuclei_segmentation.git
+cd bmeg591_nuclei_segmentation
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+```
+
+For a quick dirty training of U-Net, run the following command:
+
+```
+python train.py --data_dir /home/ultrai/datasets/NuInsSeg --epochs 125 --batch_size 4 --visualize_every
+ 20 --save_every 20
+```
+
+
 # NuInsSeg:  A Fully Annotated Dataset for Nuclei Instance Segmentation in H&amp;E-Stained Histological Images
 [![Generic badge](https://img.shields.io/badge/Code-MATLAB-<COLOR>.svg)](https://shields.io/)
 
