@@ -17,7 +17,6 @@ from dataset import NuInSegDataset
 
 def arguments_parser():
     parser = argparse.ArgumentParser(description="Training script for segmentation")
-    
     # Adding arguments for command line execution
     parser.add_argument('--data_dir', type=str, default='/home/ultrai/datasets/NuInsSeg', help='Path to the dataset')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size for training and evaluation')
@@ -27,6 +26,8 @@ def arguments_parser():
     parser.add_argument('--test_size', type=float, default=0.1, help='Fraction of data to use for testing')
     parser.add_argument('--log_dir', type=str, default='./runs/unet_experiment', help='Directory to store TensorBoard logs')
     parser.add_argument('--resume', type=str, default='', help='Path to the checkpoint to resume training')
+    parser.add_argument('--save_every', type=int, default=1, help='Save model checkpoint every n epochs')
+    parser.add_argument('--visualize_every', type=int, default=1, help='Log predictions to TensorBoard every n epochs')
     return parser.parse_args()
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device, writer, epoch):
@@ -172,7 +173,10 @@ def main():
     for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch'):
         train_one_epoch(model, train_dataloader, criterion, optimizer, device, writer, epoch)
         val_dice = validate(model, val_dataloader, criterion, device, writer, epoch)
-        visualize_predictions(model, val_dataloader, device, writer, epoch)
+
+        # Log predictions to TensorBoard
+        if epoch % args.visualize_every == 0:
+            visualize_predictions(model, val_dataloader, device, writer, epoch)
 
         # Save the model if validation dice is better
         if val_dice > best_val_dice:
@@ -184,13 +188,14 @@ def main():
                 'best_val_dice': best_val_dice,
             }, os.path.join(args.log_dir, 'best_unet.pth'))
         
-        # Save model checkpoint
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'best_val_dice': best_val_dice,
-        }, os.path.join(args.log_dir, 'last_unet.pth'))
+        # Save model checkpoint every n epochs
+        if epoch % args.save_every == 0:
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_val_dice': best_val_dice,
+            }, os.path.join(args.log_dir, 'last_unet.pth'))
 
     # Save final model
     torch.save({
