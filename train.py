@@ -28,9 +28,65 @@ def arguments_parser():
 
     return parser.parse_args()
 
-def main(args):
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+def train_one_epoch(model, dataloader, criterion, optimizer, device, writer, epoch):
+    model.train()
+    running_loss = 0.0
+    train_dice_metric = DiceMetric(include_background=False, reduction="mean")
+    
+    for images, masks in tqdm(dataloader, desc='Training Steps', leave=False):
+        images, masks = images.to(device), masks.to(device)
+        # Zero the parameter gradients
+        optimizer.zero_grad()
+        # Forward pass
+        outputs = model(images)
+        # Calculate loss
+        loss = criterion(outputs, masks)
+        running_loss += loss.item()
+        # Backward pass and optimize
+        loss.backward()
+        optimizer.step()
+        # Calculate dice metric
+        train_dice_metric(y_pred=outputs > 0.5, y=masks)
+    
+    train_dice = train_dice_metric.aggregate().item()
+    train_dice_metric.reset()
+    
+    # Log the loss and dice metric to TensorBoard
+    writer.add_scalar('Train/Loss', running_loss / len(dataloader), epoch)
+    writer.add_scalar('Train/Dice', train_dice, epoch)
+    print(f"Train Loss: {running_loss / len(dataloader):.4f}, Train Dice: {train_dice:.4f}")
 
+def validate(model, dataloader, criterion, device, writer, epoch):
+    model.eval()
+    val_loss = 0.0
+    val_dice_metric = DiceMetric(include_background=False, reduction="mean")
+    
+    with torch.no_grad():
+        for images, masks in tqdm(dataloader, desc='Validation Steps', leave=False):
+            images, masks = images.to(device), masks.to(device)
+            # Forward pass
+            outputs = model(images)
+            # Calculate loss
+            loss = criterion(outputs, masks)
+            val_loss += loss.item()
+            # Calculate dice metric
+            val_dice_metric(y_pred=outputs > 0.5, y=masks)
+    
+    val_dice = val_dice_metric.aggregate().item()
+    val_dice_metric.reset()
+    
+    # Log the loss and dice metric to TensorBoard
+    writer.add_scalar('Val/Loss', val_loss / len(dataloader), epoch)
+    writer.add_scalar('Val/Dice', val_dice, epoch)
+    print(f"Val Loss: {val_loss / len(dataloader):.4f}, Val Dice: {val_dice:.4f}")
+    
+    return val_dice
+
+def main():
+    args = arguments_parser()
+
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    
     # Define transformations
     transform = v2.Compose([
         v2.ToDtype(torch.float32),
@@ -59,64 +115,9 @@ def main(args):
 
     # Training loop
     best_val_dice = 0.0
-    best_epoch = 0
     for epoch in tqdm(range(args.epochs), desc='Epochs'):
-        # Initialize Dice Metric
-        train_dice_metric = DiceMetric(include_background=False, reduction="mean")
-        val_dice_metric = DiceMetric(include_background=False, reduction="mean")
-
-        model.train()
-        running_loss = 0.0
-        
-        for images, masks in tqdm(train_dataloader, desc='steps', leave=False):
-            images, masks = images.to(device), masks.to(device)
-
-            # Zero the parameter gradients
-            optimizer.zero_grad()
-
-            # Forward pass
-            outputs = model(images)
-            
-            # Calculate loss
-            loss = criterion(outputs, masks)
-            train_dice_metric(y_pred=outputs > 0.5, y=masks)
-
-            running_loss += loss.item()
-
-            # Backward pass and optimize
-            loss.backward()
-            optimizer.step()
-
-        train_dice = train_dice_metric.aggregate().item()
-        train_dice_metric.reset()
-
-        # Log the loss to TensorBoard
-        writer.add_scalar('Loss/train', running_loss / len(train_dataloader), epoch)
-        writer.add_scalar('Dice/train', train_dice, epoch)
-        print(f"Train Loss: {running_loss / len(train_dataloader):.4f}")
-        print(f"Train Dice: {train_dice:.4f}")
-
-        # Validation loop
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for images, masks in val_dataloader:
-                images, masks = images.to(device), masks.to(device)
-                
-                # Forward pass
-                outputs = model(images)
-                loss = criterion(outputs, masks)
-                val_loss += loss.item()
-                val_dice_metric(y_pred=outputs > 0.5, y=masks)
-
-        val_dice = val_dice_metric.aggregate().item()
-        val_dice_metric.reset()
-
-        # Log the validation loss to TensorBoard
-        writer.add_scalar('Loss/val', val_loss / len(val_dataloader), epoch)
-        writer.add_scalar('Dice/val', val_dice, epoch)
-        print(f"Val Loss: {val_loss / len(val_dataloader):.4f}")
-        print(f"Val Dice: {val_dice:.4f}")
+        train_one_epoch(model, train_dataloader, criterion, optimizer, device, writer, epoch)
+        val_dice = validate(model, val_dataloader, criterion, device, writer, epoch)
 
         # Save the model if validation dice is better
         if val_dice > best_val_dice:
@@ -129,8 +130,4 @@ def main(args):
     torch.save(model.state_dict(), os.path.join(args.log_dir, 'final_unet.pth'))
 
 if __name__ == "__main__":
-    # Parse the arguments
-    args = arguments_parser()
-
-    # Call the main function to start the process
-    main(args)
+    main()
