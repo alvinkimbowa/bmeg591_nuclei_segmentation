@@ -7,7 +7,36 @@ from torch.utils.data import Dataset
 from torchvision import tv_tensors
 
 class NuInSegDataset(Dataset):
+    """
+    A custom dataset loader for the NuInSeg dataset.
+    This class loads images and their corresponding binary masks from the specified directory.
+    It supports splitting the dataset into training, validation, and test sets.
+
+    Args:
+        data_dir (str): Path to the root directory containing the dataset.
+        train (bool): If True, loads the training dataset. If False, loads the validation or test dataset.
+        val_size (float): Fraction of the dataset to use for validation. Default is 0.2.
+        test_size (float): Fraction of the dataset to use for testing. Default is 0.1.
+        transform (callable, optional): A function/transform to apply to the image and mask pairs.
+    
+    Attributes:
+        img_paths (list): List of image file paths (depending on the split).
+        mask_paths (list): List of mask file paths (depending on the split).
+    """
+
     def __init__(self, data_dir, train=True, val_size=0.2, test_size=0.1, transform=None):
+        """
+        Initializes the NuInSegDataset class. It reads images and corresponding masks, and splits
+        the dataset into training, validation, and test sets based on the given `val_size` and `test_size`.
+
+        Args:
+            data_dir (str): Path to the root directory containing the dataset.
+            train (bool): If True, loads the training dataset. If False, loads the validation or test dataset.
+            val_size (float): Fraction of the dataset to use for validation. Default is 0.2.
+            test_size (float): Fraction of the dataset to use for testing. Default is 0.1.
+            transform (callable, optional): A function/transform to apply to the image and mask pairs.
+        """
+
         self.data_dir = data_dir
         self.transform = transform
         
@@ -56,6 +85,17 @@ class NuInSegDataset(Dataset):
         return len(self.img_paths)
 
     def __getitem__(self, idx):
+        """
+        Retrieves the image and its corresponding mask at the specified index.
+
+        Args:
+            idx (int): The index of the sample to retrieve.
+
+        Returns:
+            tuple: A tuple (image, mask), where:
+                - image (torch.Tensor): The image in CHW format.
+                - mask (torch.Tensor): The binary mask in CHW format.
+        """
         img_path = self.img_paths[idx]
         mask_path = self.mask_paths[idx]
         
