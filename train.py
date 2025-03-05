@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torchvision import transforms
+from torchvision.transforms import v2
 from monai.metrics import DiceMetric
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
@@ -32,9 +32,9 @@ def main(args):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     # Define transformations
-    transform = transforms.Compose([
-        transforms.Resize((512, 512)),
-        transforms.ToTensor(),
+    transform = v2.Compose([
+        v2.ToDtype(torch.float32),
+        v2.Resize((512, 512)),
     ])
     
     # Create datasets for train, validation, and test sets

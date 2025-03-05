@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
+from torchvision import tv_tensors
 
 class NuInSegDataset(Dataset):
     def __init__(self, data_dir, train=True, val_size=0.2, test_size=0.1, transform=None):
@@ -59,12 +60,20 @@ class NuInSegDataset(Dataset):
         mask_path = self.mask_paths[idx]
         
         # Load images
-        image = Image.open(img_path).convert('RGB')
-        mask = Image.open(mask_path)
+        image = np.array(Image.open(img_path).convert('RGB'), dtype=np.float32) / 255
+        mask = np.array(Image.open(mask_path), dtype=np.float32) / 255
         
+        image = image.transpose(2, 0, 1)
+        mask = mask[np.newaxis, :, :]
+
+        image = tv_tensors.Image(image)
+        mask = tv_tensors.Mask(mask)
+
         if self.transform:
-            image = self.transform(image)
-            mask = self.transform(mask)  # Apply same transform for the mask if needed
+            image, mask = self.transform((image, mask))
         
+        assert image.min() >= 0 and image.max() <= 1
+        assert np.all(np.isin(mask, [0, 1]))
+
         return image, mask
 
