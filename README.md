@@ -15,10 +15,10 @@ Download the full dataset from https://zenodo.org/records/10518968.
 
 Unzip it and you're ready to go!
 
-For a quick dirty training of U-Net, run the following command:
+For a quick dirty training of U-Net, run the command below. Updated the `data_dir` path accordingly
 
 ```
-python train.py --data_dir /home/ultrai/datasets/NuInsSeg --epochs 125 --batch_size 4 --visualize_every
+python train.py --data_dir </path/to/dataset>/NuInsSeg --epochs 125 --batch_size 4 --visualize_every
  20 --save_every 20
 ```
 
