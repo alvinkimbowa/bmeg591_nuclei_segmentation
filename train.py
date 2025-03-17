@@ -146,7 +146,7 @@ def save_model(model, optimizer, epoch, best_val_dice, checkpoint_path):
 def main():
     args = arguments_parser()
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Define transformations
     transform = v2.Compose([
