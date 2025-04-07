@@ -146,9 +146,6 @@ def save_model(model, optimizer, epoch, best_val_dice, checkpoint_path):
 def main():
     args = arguments_parser()
 
-    if not os.path.isdir(args.data_dir):
-        raise ValueError(f"Data directory {args.data_dir} does not exist")
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Define transformations

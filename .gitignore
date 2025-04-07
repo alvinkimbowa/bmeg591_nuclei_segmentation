@@ -1,5 +1,8 @@
 runs/
-
+plot/
+error*
+output*
+NuInsSeg/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

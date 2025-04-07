@@ -45,6 +45,8 @@ class NuInSegDataset(Dataset):
         self.mask_paths = glob(f"{data_dir}/*/mask binary without border/*.png")
         
         # First, split into training (80%) and remaining (20%) dataset
+        print(len(self.img_paths), len(self.mask_paths))
+    
         self.train_img_paths, remaining_img_paths, self.train_mask_paths, remaining_mask_paths = train_test_split(
             self.img_paths, self.mask_paths, test_size=(val_size + test_size), random_state=19, shuffle=True
         )
@@ -121,7 +123,10 @@ class NuInSegDataset(Dataset):
         if self.transform:
             image, mask = self.transform((image, mask))
         
+        # print(image.min(), image.max(), mask.min(), mask.max(),flush=True)
+        
         assert image.min() >= 0 and image.max() <= 1
+        # assert np.all(np.isin(image, [0, 1]))
         assert np.all(np.isin(mask, [0, 1]))
 
         return image, mask
