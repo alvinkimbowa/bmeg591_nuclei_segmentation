@@ -15,4 +15,4 @@ cd /projects/ovcare/users/elahe_ranjbari/SAM/bmeg591_nuclei_segmentation
 source /projects/ovcare/users/elahe_ranjbari/miniconda3/etc/profile.d/conda.sh
 conda activate conda_env
 
-python train_sam.py --data_dir /projects/ovcare/users/elahe_ranjbari/SAM/bmeg591_nuclei_segmentation/NuInsSeg --epochs 20 --batch_size 1 --visualize_every 5 --save_every 1
+python train_sam.py --data_dir /projects/ovcare/users/elahe_ranjbari/SAM/bmeg591_nuclei_segmentation/NuInsSeg --epochs 50 --batch_size 1 --visualize_every 5 --save_every 1
