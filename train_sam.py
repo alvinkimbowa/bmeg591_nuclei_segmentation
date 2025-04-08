@@ -13,6 +13,7 @@ from torch.nn import functional as F
 from torchvision.transforms import v2
 from torch.utils.tensorboard import SummaryWriter
 from monai.metrics import DiceMetric
+from monai.losses import DiceCELoss
 
 from transformers import SamModel, SamProcessor
 
@@ -123,7 +124,7 @@ def build_grid_points(mask_np, grid_step=8):
     point_labels = point_labels.astype(np.int32) 
     return grid_points, point_labels
 
-def train_one_epoch(model, processor, dataloader, criterion, optimizer, device, 
+def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, optimizer, device, 
                     writer, epoch, grid_step=8):
     train_dice_metric = DiceMetric(include_background=False, reduction="mean")
     epoch_loss = 0.0
@@ -169,8 +170,8 @@ def train_one_epoch(model, processor, dataloader, criterion, optimizer, device,
         )  # shape [1, 1, H, W]
 
         pred_prob = torch.sigmoid(upscaled_mask)  
-        d_loss = dice_loss(pred_prob, masks)        
-        bce_loss = criterion(pred_prob, masks)
+        d_loss = criterion_dce(pred_prob, masks)        
+        bce_loss = criterion_bce(pred_prob, masks)
         loss = 0.5 * d_loss + 0.5 * bce_loss
 
         optimizer.zero_grad()
@@ -305,7 +306,8 @@ def main():
     for name, param in model.mask_decoder.named_parameters():
         param.requires_grad = True
 
-    criterion = nn.BCEWithLogitsLoss()
+    criterion_bce = nn.BCEWithLogitsLoss()
+    criterion_dce = DiceCELoss(sigmoid=True, squared_pred=True, reduction='mean')
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     if not os.path.exists(args.log_dir):
@@ -317,7 +319,7 @@ def main():
     model.train()
     for epoch in range(args.epochs):
         train_one_epoch(
-            model, processor, train_dataloader, criterion, optimizer, device, 
+            model, processor, train_dataloader, criterion_bce,criterion_dce, optimizer, device, 
             writer, epoch, grid_step=16  
         )
 
