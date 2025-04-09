@@ -75,7 +75,7 @@ def generate_bbx_prompts(mask_np):
         bboxes.append([x0, y0, x1, y1])
     return np.array(bboxes).astype(np.float32)
 
-def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point_labels=None,alpha=0.5):
+def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point_labels=None, bbxes=None, alpha=0.5):
     image = image.permute(1, 2, 0).cpu().numpy()
     gt_mask = gt_mask.squeeze().cpu().numpy()
     pred_mask = pred_mask.squeeze().cpu().numpy()
@@ -98,11 +98,20 @@ def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point
     plt.axis("off")
 
     # Image with grid points
-    plt.subplot(1, 4, 3)
-    plt.imshow(image)
-    plt.scatter(points[:, 1], points[:, 0], c=point_labels, s=1, cmap='cool')
-    plt.title("Prompts")
-    plt.axis("off")
+    if points is not None:
+        plt.subplot(1, 4, 3)
+        plt.imshow(image)
+        plt.scatter(points[:, 1], points[:, 0], c=point_labels, s=1, cmap='cool')
+        plt.title("Prompts")
+        plt.axis("off")
+    
+    if bbxes is not None:
+        plt.subplot(1, 4, 3)
+        plt.imshow(image)
+        for bbx in bbxes:
+            plt.gca().add_patch(plt.Rectangle((bbx[0], bbx[1]), bbx[2]-bbx[0], bbx[3]-bbx[1], edgecolor='red', facecolor='none'))
+        plt.title("Bounding Boxes")
+        plt.axis("off")
 
     # Predicted mask
     plt.subplot(1, 4, 4)
@@ -171,7 +180,7 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
             hd95_metric(y_pred=pred_masks, y=mask)
 
             if vis_dir:
-                visualize(image[0], mask[0], pred_masks[0], vis_dir, image_path[0], points, point_labels)
+                visualize(image[0], mask[0], pred_masks[0], vis_dir, image_path[0], points, point_labels, bbxes)
 
     avg_dice = dice_metric.aggregate().item() * 100
     avg_hd95 = hd95_metric.aggregate().item()
