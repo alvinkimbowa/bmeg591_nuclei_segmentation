@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import v2
 
-from monai.metrics import DiceMetric
+from monai.metrics import DiceMetric, HausdorffDistanceMetric
 from transformers import SamModel, SamProcessor
 
 from dataset import NuInSegDataset 
@@ -50,8 +50,7 @@ def visualize(image, gt_mask, pred_mask, save_dir, idx, alpha=0.5):
 def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_dir=None):
     model.eval()
     dice_metric = DiceMetric(include_background=False, reduction="mean")
-    total_dice = 0.0
-    num_samples = 0
+    hd95_metric = HausdorffDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)
 
     with torch.no_grad():
         for idx, (image, mask) in enumerate(tqdm(dataloader, desc="Zero-shot Testing")):
@@ -94,23 +93,17 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
             pred_prob = torch.sigmoid(pred_up)
             pred_bin = (pred_prob > 0.5).float()
 
-            dice = 1.0 - dice_loss(pred_bin, mask).item()
-            total_dice += dice
-            num_samples += 1
+            dice_metric(y_pred=pred_bin, y=mask)
+            hd95_metric(y_pred=pred_bin, y=mask)
 
             if vis_dir:
                 visualize(image[0], mask[0], pred_bin[0], vis_dir, idx)
 
-    avg_dice = total_dice / num_samples
-    print(f"Average Zero-shot Dice Score: {avg_dice:.4f}")
+    avg_dice = dice_metric.aggregate().item() * 100
+    avg_hd95 = hd95_metric.aggregate().item()
 
-
-def dice_loss(pred, target):
-    smooth = 1e-6
-    pred_flat = pred.reshape(-1)
-    target_flat = target.reshape(-1)
-    intersection = (pred_flat * target_flat).sum()
-    return 1.0 - (2.0 * intersection + smooth) / (pred_flat.sum() + target_flat.sum() + smooth)
+    print(f"Average Zero-shot Dice Score: {avg_dice:.2f}")
+    print(f"Average Zero-shot HD95 Score: {avg_hd95:.2f}")
 
 def main():
     args = arguments_parser()
