@@ -116,7 +116,7 @@ def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point
     plt.close()
     return None
 
-def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_dir=None, prompt_type="grid"):
+def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_dir=None, prompt_type="grid", num_pos_points=6):
     model.eval()
     dice_metric = DiceMetric(include_background=False, reduction="mean")
     hd95_metric = HausdorffDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)
@@ -136,7 +136,7 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
             if prompt_type == "grid":
                 points, point_labels = build_grid_points(mask_np, grid_step=grid_step)
             elif prompt_type == "random":
-                points, point_labels = generate_random_point_prompts(mask_np)
+                points, point_labels = generate_random_point_prompts(mask_np, num_pos_points=num_pos_points, f=3)
             elif prompt_type == "bbx":
                 bbxes = generate_bbx_prompts(mask_np)
             else:
@@ -220,6 +220,7 @@ def main():
         grid_step=32,
         vis_dir=args.vis_dir,
         prompt_type=args.prompt_type,
+        num_pos_points=args.num_pos_points,
     )
 
 if __name__ == "__main__":
