@@ -1,9 +1,11 @@
 import os
 import torch
 import numpy as np
+import json
 from scipy import ndimage
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from pprint import pprint
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import v2
@@ -175,6 +177,13 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
 
 def main():
     args = arguments_parser()
+
+    # Save args to json file
+    os.makedirs(args.vis_dir, exist_ok=True)
+    with open(os.path.join(args.vis_dir, "args.json"), "w") as f:
+        json.dump(vars(args), f, indent=4)
+    pprint(vars(args))
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Running on {device}")
 
