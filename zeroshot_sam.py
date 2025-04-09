@@ -201,7 +201,8 @@ def main():
         dataloader=test_loader,
         device=device,
         grid_step=32,
-        vis_dir="./plot"  
+        vis_dir=args.vis_dir,
+        prompt_type=args.prompt_type,
     )
 
 if __name__ == "__main__":
