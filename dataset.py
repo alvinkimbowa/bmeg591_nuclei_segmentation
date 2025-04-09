@@ -1,7 +1,7 @@
-from glob import glob
-
+import os
 import numpy as np
 from PIL import Image
+from glob import glob
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 from torchvision import tv_tensors
@@ -129,5 +129,5 @@ class NuInSegDataset(Dataset):
         # assert np.all(np.isin(image, [0, 1]))
         assert np.all(np.isin(mask, [0, 1]))
 
-        return image, mask
+        return image, mask, os.path.basename(img_path)
 
