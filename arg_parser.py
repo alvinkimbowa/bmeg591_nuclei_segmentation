@@ -15,5 +15,6 @@ def arguments_parser():
     parser.add_argument('--save_every', type=int, default=1, help='Save model checkpoint every n epochs')
     parser.add_argument('--visualize_every', type=int, default=1, help='Log predictions to TensorBoard every n epochs')
     parser.add_argument('--vis_dir', type=str, default='./plot', help='Directory to save visualizations')
+    parser.add_argument('--model_name', type=str, default='sam-vit-huge', help='Model name for SAM')
     parser.add_argument('--prompt_type', type=str, default='grid', choices=['grid', 'random'], help='Type of prompt for SAM')
     return parser.parse_args()

@@ -192,6 +192,14 @@ def main():
     )
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2)
 
+    if args.model_name.lower() == "sam":
+        ckpt = "facebook/sam-vit-huge"
+    elif args.model_name.lower() == "medsam":
+        ckpt = "flaviagiammarino/medsam-vit-base"
+    else:
+        ckpt = "facebook/sam-vit-base"
+    
+    print(f"Using model weights from {ckpt}")
     model = SamModel.from_pretrained("facebook/sam-vit-huge").to(device)
     processor = SamProcessor.from_pretrained("facebook/sam-vit-huge" , do_rescale=False, do_resize=False)
 
