@@ -61,6 +61,18 @@ def generate_random_point_prompts(mask_np, num_pos_points=1, f=1):
 
     return point_prompts.astype(np.float32), point_labels.astype(np.int32)
 
+def generate_bbx_prompts(mask_np):
+    labeled_mask, num_instances = ndimage.label(mask_np)
+    bboxes = []
+    for i in range(1, num_instances + 1):
+        ys, xs = np.where(labeled_mask == i)
+        if ys.size == 0 or xs.size == 0:
+            continue
+        y0, y1 = ys.min(), ys.max()
+        x0, x1 = xs.min(), xs.max()
+        bboxes.append([x0, y0, x1, y1])
+    return np.array(bboxes).astype(np.float32)
+
 def visualize(image, gt_mask, pred_mask, save_dir, idx, points=None, point_labels=None,alpha=0.5):
     image = image.permute(1, 2, 0).cpu().numpy()
     gt_mask = gt_mask.squeeze().cpu().numpy()
@@ -123,8 +135,10 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
                 points, point_labels = build_grid_points(mask_np, grid_step=grid_step)
             elif prompt_type == "random":
                 points, point_labels = generate_random_point_prompts(mask_np)
+            elif prompt_type == "bbx":
+                bbxes = generate_bbx_prompts(mask_np)
             else:
-                raise ValueError("Unsupported prompt type. Choose 'grid' or 'random'.")
+                raise ValueError("Unsupported prompt type. Choose 'grid', 'random', or 'bbx'.")
 
             #  Skip if no prompts are provided
             if len(points) == 0 and len(point_labels) == 0 and len(bbxes) == 0:
