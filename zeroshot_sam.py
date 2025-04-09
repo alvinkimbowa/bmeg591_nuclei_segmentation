@@ -102,7 +102,7 @@ def visualize(image, gt_mask, pred_mask, save_dir, idx, points=None, point_label
     plt.close()
     return None
 
-def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_dir=None):
+def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_dir=None, prompt_type="grid"):
     model.eval()
     dice_metric = DiceMetric(include_background=False, reduction="mean")
     hd95_metric = HausdorffDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)
@@ -118,15 +118,24 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
             img_np = image[0].permute(1, 2, 0).cpu().numpy()
             mask_np = mask[0, 0].cpu().numpy()
 
-            grid_points, point_labels = build_grid_points(mask_np, grid_step=grid_step)
+            # Generate prompts
+            points, point_labels, bbxes = None, None, None
+            if prompt_type == "grid":
+                points, point_labels = build_grid_points(mask_np, grid_step=grid_step)
+            elif prompt_type == "random":
+                points, point_labels = generate_random_point_prompts(mask_np)
+            else:
+                raise ValueError("Unsupported prompt type. Choose 'grid' or 'random'.")
 
-            if len(grid_points) == 0:
+            #  Skip if no prompts are provided
+            if len(points) == 0 and len(point_labels) == 0 and len(bbxes) == 0:
                 continue
-
+            
             encoded = processor(
                 images=[img_np],
-                input_points=[grid_points.tolist()],
-                input_labels=[point_labels.tolist()],
+                input_points=[points.tolist()] if points is not None else None,
+                input_labels=[point_labels.tolist()] if point_labels is not None else None,
+                input_boxes=[bbxes.tolist()] if bbxes is not None else None,
                 return_tensors="pt"
             ).to(device)
 
