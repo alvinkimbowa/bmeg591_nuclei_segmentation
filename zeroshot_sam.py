@@ -21,6 +21,7 @@ def build_grid_points(mask_np, grid_step=32):
     yy, xx = np.meshgrid(ys, xs, indexing='ij')
     grid_points = np.stack([yy.flatten(), xx.flatten()], axis=-1)
     point_labels = mask_np[grid_points[:, 0], grid_points[:, 1]]
+    point_labels[point_labels == 0] = -1
     return grid_points.astype(np.float32), point_labels.astype(np.int32)
 
 
