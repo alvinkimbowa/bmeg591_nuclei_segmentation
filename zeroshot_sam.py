@@ -25,28 +25,46 @@ def build_grid_points(mask_np, grid_step=32):
     return grid_points.astype(np.float32), point_labels.astype(np.int32)
 
 
-def visualize(image, gt_mask, pred_mask, save_dir, idx, alpha=0.5):
+def visualize(image, gt_mask, pred_mask, save_dir, idx, points=None, point_labels=None,alpha=0.5):
     image = image.permute(1, 2, 0).cpu().numpy()
     gt_mask = gt_mask.squeeze().cpu().numpy()
     pred_mask = pred_mask.squeeze().cpu().numpy()
 
     os.makedirs(save_dir, exist_ok=True)
 
-    plt.imsave(f"{save_dir}/image_{idx}.png", image)
-    
-    plt.figure()
+    plt.figure(figsize=(20, 5))
+
+    # Original image
+    plt.subplot(1, 4, 1)
+    plt.imshow(image)
+    plt.title("Image")
+    plt.axis("off")
+
+    # Ground truth mask
+    plt.subplot(1, 4, 2)
     plt.imshow(image)
     plt.imshow(gt_mask, alpha=alpha)
     plt.title("GT Mask")
-    plt.savefig(f"{save_dir}/gt_{idx}.png")
-    plt.close()
+    plt.axis("off")
 
-    plt.figure()
+    # Image with grid points
+    plt.subplot(1, 4, 3)
+    plt.imshow(image)
+    plt.scatter(points[:, 1], points[:, 0], c=point_labels, s=1, cmap='cool')
+    plt.title("Prompts")
+    plt.axis("off")
+
+    # Predicted mask
+    plt.subplot(1, 4, 4)
     plt.imshow(image)
     plt.imshow(pred_mask, alpha=alpha)
     plt.title("Predicted Mask")
-    plt.savefig(f"{save_dir}/pred_{idx}.png")
+    plt.axis("off")
+
+    plt.tight_layout()
+    plt.savefig(f"{save_dir}/visualization_{idx}.png", bbox_inches='tight')
     plt.close()
+    return None
 
 def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_dir=None):
     model.eval()
@@ -98,7 +116,7 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
             hd95_metric(y_pred=pred_bin, y=mask)
 
             if vis_dir:
-                visualize(image[0], mask[0], pred_bin[0], vis_dir, idx)
+                visualize(image[0], mask[0], pred_masks[0], vis_dir, idx, points, point_labels)
 
     avg_dice = dice_metric.aggregate().item() * 100
     avg_hd95 = hd95_metric.aggregate().item()
