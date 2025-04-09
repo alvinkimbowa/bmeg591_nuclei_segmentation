@@ -138,7 +138,8 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
                 return_tensors="pt"
             ).to(device)
             
-            outputs = model(**encoded, multimask_output=False)
+            with torch.no_grad():
+                outputs = model(**encoded, multimask_output=False)
             
             pred_masks = processor.image_processor.post_process_masks(
                 outputs.pred_masks.cpu(),
