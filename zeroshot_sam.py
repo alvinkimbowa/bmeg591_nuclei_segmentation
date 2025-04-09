@@ -143,7 +143,7 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
                 raise ValueError("Unsupported prompt type. Choose 'grid', 'random', or 'bbx'.")
 
             #  Skip if no prompts are provided
-            if len(points) == 0 and len(point_labels) == 0 and len(bbxes) == 0:
+            if points is None and bbxes is None:
                 continue
             
             encoded = processor(
