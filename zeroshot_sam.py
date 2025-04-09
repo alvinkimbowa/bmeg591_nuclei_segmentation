@@ -163,6 +163,10 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
                 encoded["reshaped_input_sizes"].cpu(),
             )[0].float()    # [1, 1, H, W]
 
+            # Binarize the predicted masks. This is especially necessary for the MedSAM model that outputs
+            # a separate mask for each bounding box prompt
+            pred_masks = torch.any(pred_masks, dim=0, keepdim=True).float()  # [N, 1, H, W] -> [1, 1, H, W]
+
             dice_metric(y_pred=pred_masks, y=mask)
             hd95_metric(y_pred=pred_masks, y=mask)
 
