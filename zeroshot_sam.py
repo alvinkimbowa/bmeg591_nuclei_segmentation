@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+from scipy import ndimage
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import torch.nn.functional as F
@@ -24,6 +25,41 @@ def build_grid_points(mask_np, grid_step=32):
     point_labels[point_labels == 0] = -1
     return grid_points.astype(np.float32), point_labels.astype(np.int32)
 
+def generate_random_point_prompts(mask_np, num_pos_points=1, f=1):
+    labeled_mask, num_instances = ndimage.label(mask_np)   # [H, W] -> [H, W]
+
+    pos_points = []
+    for i in range(1, num_instances + 1):
+        y_coords, x_coords = np.where(labeled_mask == i)
+        points = np.column_stack((y_coords, x_coords))
+        
+        # Always include the center of the instance
+        center_y, center_x = np.mean(points, axis=0).astype(int)
+        center_point = np.array([[center_y, center_x]])
+        
+        # Select other points randomly
+        if num_pos_points > 1:
+            # Ensure we don't select the center point again
+            points = points[(points[:, 0] != center_y) | (points[:, 1] != center_x)]
+            # Randomly select points from the remaining points
+            selected_indices = np.random.choice(len(points), size=min(len(points), num_pos_points - 1), replace=False)
+            selected_points = points[selected_indices]
+        else:
+            selected_points = np.empty((0, 2), dtype=int)
+        
+        pos_points.append(np.vstack([center_point, selected_points]))
+    pos_points = np.vstack(pos_points)  # Combine all selected points
+    
+    # Select background points where mask_np == 0 (background area)
+    neg_points = np.argwhere(mask_np == 0)  # Get indices of background pixels
+    num_neg_points = len(pos_points) * f
+    selected_background_points = neg_points[np.random.choice(neg_points.shape[0], size=num_neg_points, replace=False)]
+
+    # Combine nuclei centers and background points
+    point_prompts = np.vstack([pos_points, selected_background_points])
+    point_labels = np.array([1] * len(pos_points) + [-1] * num_neg_points)  # 1 for nuclei centers, -1 for background points
+
+    return point_prompts.astype(np.float32), point_labels.astype(np.int32)
 
 def visualize(image, gt_mask, pred_mask, save_dir, idx, points=None, point_labels=None,alpha=0.5):
     image = image.permute(1, 2, 0).cpu().numpy()
