@@ -113,10 +113,9 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
                 raise ValueError("Batch size must be 1")
 
             image = image.to(device)        # [1, 3, H, W]
-            mask = mask.to(device)          # [1, 1, H, W]
 
             img_np = image[0].permute(1, 2, 0).cpu().numpy()
-            mask_np = mask[0, 0].cpu().numpy()
+            mask_np = mask[0, 0].numpy()    # [1, 1, H, W] -> [H, W]
 
             # Generate prompts
             points, point_labels, bbxes = None, None, None
@@ -138,27 +137,17 @@ def test_sam_zeroshot(model, processor, dataloader, device, grid_step=32, vis_di
                 input_boxes=[bbxes.tolist()] if bbxes is not None else None,
                 return_tensors="pt"
             ).to(device)
-
+            
             outputs = model(**encoded, multimask_output=False)
-            pred_mask = outputs.pred_masks  # [1, 1, 256, 256]
+            
+            pred_masks = processor.image_processor.post_process_masks(
+                outputs.pred_masks.cpu(),
+                encoded["original_sizes"].cpu(),
+                encoded["reshaped_input_sizes"].cpu(),
+            )[0].float()    # [1, 1, H, W]
 
-            if pred_mask.dim() == 3:
-                pred_mask = pred_mask.unsqueeze(1)  # [1,1,H,W]
-            elif pred_mask.dim() == 5:
-                pred_mask = pred_mask.squeeze(1)
-
-            H, W = mask_np.shape
-            pred_up = F.interpolate(
-                pred_mask,
-                size=(H, W),
-                mode="bilinear",
-                align_corners=False
-            )
-            pred_prob = torch.sigmoid(pred_up)
-            pred_bin = (pred_prob > 0.5).float()
-
-            dice_metric(y_pred=pred_bin, y=mask)
-            hd95_metric(y_pred=pred_bin, y=mask)
+            dice_metric(y_pred=pred_masks, y=mask)
+            hd95_metric(y_pred=pred_masks, y=mask)
 
             if vis_dir:
                 visualize(image[0], mask[0], pred_masks[0], vis_dir, idx, points, point_labels)
