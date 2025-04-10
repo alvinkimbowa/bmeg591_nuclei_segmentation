@@ -15,4 +15,16 @@ cd /projects/ovcare/users/elahe_ranjbari/SAM/bmeg591_nuclei_segmentation
 source /projects/ovcare/users/elahe_ranjbari/miniconda3/etc/profile.d/conda.sh
 conda activate conda_env
 
-python zeroshot_sam.py --data_dir /projects/ovcare/users/elahe_ranjbari/SAM/bmeg591_nuclei_segmentation/NuInsSeg --batch_size 1
+data_dir=/projects/ovcare/users/elahe_ranjbari/SAM/bmeg591_nuclei_segmentation/NuInsSeg
+prompt_type=bbx
+num_pos_points=6
+model_name=medsam
+vis_dir=./plot/$model_name/$prompt_type
+
+python zeroshot_sam.py \
+    --data_dir $data_dir \
+    --batch_size 1 \
+    --prompt_type $prompt_type \
+    --num_pos_points $num_pos_points \
+    --vis_dir $vis_dir \
+    --model_name $model_name
