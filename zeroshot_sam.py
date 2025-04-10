@@ -82,19 +82,19 @@ def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point
 
     os.makedirs(save_dir, exist_ok=True)
 
-    plt.figure(figsize=(20, 5))
+    plt.figure(figsize=(12, 8))  # Adjusted figure size for better legibility on paper
 
     # Original image
     plt.subplot(1, 4, 1)
     plt.imshow(image)
-    plt.title("Image")
+    plt.title("Image", fontsize=16)
     plt.axis("off")
 
     # Ground truth mask
     plt.subplot(1, 4, 2)
     plt.imshow(image)
     plt.imshow(gt_mask, alpha=alpha)
-    plt.title("GT Mask")
+    plt.title("GT Mask", fontsize=16)
     plt.axis("off")
 
     # Image with grid points
@@ -102,7 +102,7 @@ def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point
         plt.subplot(1, 4, 3)
         plt.imshow(image)
         plt.scatter(points[:, 1], points[:, 0], c=point_labels, s=1, cmap='cool')
-        plt.title("Prompts")
+        plt.title("Prompts", fontsize=16)
         plt.axis("off")
     
     if bbxes is not None:
@@ -110,18 +110,18 @@ def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point
         plt.imshow(image)
         for bbx in bbxes:
             plt.gca().add_patch(plt.Rectangle((bbx[0], bbx[1]), bbx[2]-bbx[0], bbx[3]-bbx[1], edgecolor='red', facecolor='none'))
-        plt.title("Bounding Boxes")
+        plt.title("Bounding Boxes", fontsize=16)
         plt.axis("off")
 
     # Predicted mask
     plt.subplot(1, 4, 4)
     plt.imshow(image)
     plt.imshow(pred_mask, alpha=alpha)
-    plt.title("Predicted Mask")
+    plt.title("Predicted Mask", fontsize=16)
     plt.axis("off")
 
     plt.tight_layout()
-    plt.savefig(f"{save_dir}/{file_name}", bbox_inches='tight')
+    plt.savefig(f"{save_dir}/{file_name.replace(".png", ".svg")}", bbox_inches='tight', format='svg', dpi=500)
     plt.close()
     return None
 
