@@ -170,9 +170,10 @@ def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, 
         )  # shape [1, 1, H, W]
 
         pred_prob = torch.sigmoid(upscaled_mask)  
-        d_loss = criterion_dce(pred_prob, masks)        
+        d_loss = dice_loss(pred_prob, masks)        
         bce_loss = criterion_bce(pred_prob, masks)
         loss = 0.5 * d_loss + 0.5 * bce_loss
+        # loss = d_loss
 
         optimizer.zero_grad()
         loss.backward()
@@ -294,8 +295,13 @@ def main():
                                     drop_last=True, num_workers=2)
 
     # Initialize model + processor
-    model = SamModel.from_pretrained("facebook/sam-vit-huge").to(device)
-    processor = SamProcessor.from_pretrained("facebook/sam-vit-huge")
+    # model = SamModel.from_pretrained("facebook/sam-vit-huge").to(device)
+    # processor = SamProcessor.from_pretrained("facebook/sam-vit-huge")
+    # model.load_state_dict(torch.load('/projects/ovcare/users/elahe_ranjbari/SAM/bmeg591_nuclei_segmentation/runs/sam_experiment/sam_e49.pth')['model_state_dict'])
+    
+    model = SamModel.from_pretrained("flaviagiammarino/medsam-vit-base").to(device)
+    processor = SamProcessor.from_pretrained("flaviagiammarino/medsam-vit-base")
+
     print(model)
 
     # Freeze encoders, unfreeze mask decoder
@@ -319,7 +325,7 @@ def main():
     model.train()
     for epoch in range(args.epochs):
         train_one_epoch(
-            model, processor, train_dataloader, criterion_bce,criterion_dce, optimizer, device, 
+            model, processor, train_dataloader, criterion_bce, criterion_dce, optimizer, device, 
             writer, epoch, grid_step=16  
         )
 
