@@ -12,8 +12,8 @@ from torch.utils.data import DataLoader
 from torch.nn import functional as F
 from torchvision.transforms import v2
 from torch.utils.tensorboard import SummaryWriter
-from monai.metrics import DiceMetric
-from monai.losses import DiceCELoss
+from monai.metrics import DiceMetric, HausdorffDistanceMetric
+from monai.losses import  DiceCELoss
 
 from transformers import SamModel, SamProcessor
 
@@ -22,23 +22,63 @@ from arg_parser import arguments_parser
 
 import matplotlib.pyplot as plt
 
-def get_nucleus_bboxes(binary_mask):
-    """
-    binary_mask: np.array of shape (H,W), with values 0 or 1
-    returns: list of bounding boxes [ [x0,y0,x1,y1], [x0,y0,x1,y1], ... ]
-    where x0 < x1 and y0 < y1
-    """
-    labeled, num_labels = ndimage.label(binary_mask) 
+def build_grid_points(mask_np, grid_step=32):
+    H, W = mask_np.shape
+    ys = np.arange(0, H, grid_step)
+    xs = np.arange(0, W, grid_step)
+    yy, xx = np.meshgrid(ys, xs, indexing='ij')
+    grid_points = np.stack([yy.flatten(), xx.flatten()], axis=-1)
+    point_labels = mask_np[grid_points[:, 0], grid_points[:, 1]]
+    point_labels[point_labels == 0] = -1
+    return grid_points.astype(np.float32), point_labels.astype(np.int32)
+
+def generate_random_point_prompts(mask_np, num_pos_points=1, f=1):
+    labeled_mask, num_instances = ndimage.label(mask_np)   # [H, W] -> [H, W]
+
+    pos_points = []
+    for i in range(1, num_instances + 1):
+        y_coords, x_coords = np.where(labeled_mask == i)
+        points = np.column_stack((y_coords, x_coords))
+        
+        # Always include the center of the instance
+        center_y, center_x = np.mean(points, axis=0).astype(int)
+        center_point = np.array([[center_y, center_x]])
+        
+        # Select other points randomly
+        if num_pos_points > 1:
+            # Ensure we don't select the center point again
+            points = points[(points[:, 0] != center_y) | (points[:, 1] != center_x)]
+            # Randomly select points from the remaining points
+            selected_indices = np.random.choice(len(points), size=min(len(points), num_pos_points - 1), replace=False)
+            selected_points = points[selected_indices]
+        else:
+            selected_points = np.empty((0, 2), dtype=int)
+        
+        pos_points.append(np.vstack([center_point, selected_points]))
+    pos_points = np.vstack(pos_points)  # Combine all selected points
+    
+    # Select background points where mask_np == 0 (background area)
+    neg_points = np.argwhere(mask_np == 0)  # Get indices of background pixels
+    num_neg_points = len(pos_points) * f
+    selected_background_points = neg_points[np.random.choice(neg_points.shape[0], size=num_neg_points, replace=False)]
+
+    # Combine nuclei centers and background points
+    point_prompts = np.vstack([pos_points, selected_background_points])
+    point_labels = np.array([1] * len(pos_points) + [-1] * num_neg_points)  # 1 for nuclei centers, -1 for background points
+
+    return point_prompts.astype(np.float32), point_labels.astype(np.int32)
+
+def generate_bbx_prompts(mask_np):
+    labeled_mask, num_instances = ndimage.label(mask_np)
     bboxes = []
-    for label_idx in range(1, num_labels + 1):
-        ys, xs = np.where(labeled == label_idx)
+    for i in range(1, num_instances + 1):
+        ys, xs = np.where(labeled_mask == i)
         if ys.size == 0 or xs.size == 0:
             continue
         y0, y1 = ys.min(), ys.max()
         x0, x1 = xs.min(), xs.max()
-        # SAM typically uses (x0, y0, x1, y1)
-        bboxes.append([float(x0), float(y0), float(x1), float(y1)])
-    return bboxes
+        bboxes.append([x0, y0, x1, y1])
+    return np.array(bboxes).astype(np.float32)
 
 
 def get_nucleus_single_mask(binary_mask, labeled_mask, label_idx):
@@ -52,45 +92,56 @@ def get_nucleus_single_mask(binary_mask, labeled_mask, label_idx):
     single_mask = (labeled_mask == label_idx).astype(np.float32) #(H*W)
     return single_mask[None, ...]
 
-def visualize_mask_and_prediction(image, gt_mask, pred_mask, alpha=0.5):
-    """
-    Visualize the original image, ground truth mask, and predicted mask.
-    image: (H, W, 3) or (3, H, W)
-    gt_mask: (H, W) or (1, H, W)
-    pred_mask: (H, W) or (1, H, W)
-    alpha: transparency for overlay
-    """
-    if torch.is_tensor(image):
-        image = image.detach().cpu().numpy()
-    if torch.is_tensor(gt_mask):
-        gt_mask = gt_mask.detach().cpu().numpy()
-    if torch.is_tensor(pred_mask):
-        pred_mask = pred_mask.detach().cpu().numpy()
+def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point_labels=None, bbxes=None, alpha=0.5):
+    image = image.permute(1, 2, 0).cpu().numpy()
+    gt_mask = gt_mask.squeeze().cpu().numpy()
+    pred_mask = pred_mask.squeeze().cpu().numpy()
 
-    # If channel-first (C, H, W), convert to (H, W, C)
-    if image.ndim == 3 and image.shape[0] in [1, 3]:
-        image = image.transpose(1,2,0)
-    if gt_mask.ndim == 3 and gt_mask.shape[0] == 1:
-        gt_mask = gt_mask[0]
-    if pred_mask.ndim == 3 and pred_mask.shape[0] == 1:
-        pred_mask = pred_mask[0]
+    os.makedirs(save_dir, exist_ok=True)
 
-    plt.figure()
+    plt.figure(figsize=(12, 8))  # Adjusted figure size for better legibility on paper
+
+    # Original image
+    plt.subplot(1, 4, 1)
     plt.imshow(image)
-    plt.title("Original Image")
-    plt.savefig("./plot/original_image.png")
+    plt.title("Image", fontsize=16)
+    plt.axis("off")
 
-    plt.figure()
+    # Ground truth mask
+    plt.subplot(1, 4, 2)
     plt.imshow(image)
     plt.imshow(gt_mask, alpha=alpha)
-    plt.title("Ground Truth Mask Overlay")
-    plt.savefig("./plot/gt_mask_overlay.png")
+    plt.title("GT Mask", fontsize=16)
+    plt.axis("off")
 
-    plt.figure()
+    # Image with grid points
+    if points is not None:
+        plt.subplot(1, 4, 3)
+        plt.imshow(image)
+        plt.scatter(points[:, 1], points[:, 0], c=point_labels, s=1, cmap='cool')
+        plt.title("Prompts", fontsize=16)
+        plt.axis("off")
+    
+    if bbxes is not None:
+        plt.subplot(1, 4, 3)
+        plt.imshow(image)
+        for bbx in bbxes:
+            plt.gca().add_patch(plt.Rectangle((bbx[0], bbx[1]), bbx[2]-bbx[0], bbx[3]-bbx[1], edgecolor='red', facecolor='none'))
+        plt.title("Bounding Boxes", fontsize=16)
+        plt.axis("off")
+
+    # Predicted mask
+    plt.subplot(1, 4, 4)
     plt.imshow(image)
     plt.imshow(pred_mask, alpha=alpha)
-    plt.title("Predicted Mask Overlay")
-    plt.savefig("./plot/pred_mask_overlay.png")
+    plt.title("Predicted Mask", fontsize=16)
+    plt.axis("off")
+
+    plt.tight_layout()
+    name = file_name.replace(".png", ".svg")
+    plt.savefig(f"{save_dir}/{name}", bbox_inches='tight', format='svg', dpi=500)
+    plt.close()
+    return None
 
 def dice_loss(pred, target):
     """
@@ -106,30 +157,11 @@ def dice_loss(pred, target):
     return 1.0 - dice_score
 
 
-def build_grid_points(mask_np, grid_step=8):
-    """
-    mask_np: (H, W) in {0, 1}
-    grid_step: sampling step for the grid
-    Returns:
-      points: (num_points, 2), each row = [y, x]
-      labels: (num_points,), each label = 0 or 1
-    """
-    H, W = mask_np.shape
-    ys = np.arange(0, H, grid_step)
-    xs = np.arange(0, W, grid_step)
-    yy, xx = np.meshgrid(ys, xs, indexing='ij')
-    grid_points = np.stack([yy.flatten(), xx.flatten()], axis=-1)  # (N, 2)
-    point_labels = mask_np[grid_points[:,0], grid_points[:,1]]  # in {0,1}
-    grid_points = grid_points.astype(np.float32)  # Cast to float
-    point_labels = point_labels.astype(np.int32) 
-    return grid_points, point_labels
-
 def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, optimizer, device, 
-                    writer, epoch, grid_step=8):
-    train_dice_metric = DiceMetric(include_background=False, reduction="mean")
+                    writer, epoch, grid_step=8, prompt_type='grid', num_pos_points=6):
     epoch_loss = 0.0
 
-    for batch_idx, (images, masks) in enumerate(tqdm(dataloader, 
+    for batch_idx, (images, masks, image_path) in enumerate(tqdm(dataloader, 
                                     desc=f"Train Epoch {epoch}", leave=False)):
         # if images.shape[0] != 1:
         #     raise ValueError("This example code assumes batch_size=1 for multi-point prompts.")
@@ -138,42 +170,63 @@ def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, 
         masks = masks.to(device)    # shape [1, 1, H, W]
 
         img_np = images[0].permute(1,2,0).detach().cpu().numpy()  # shape (H, W, 3)
-        mask_np = masks[0, 0].detach().cpu().numpy()              # shape (H, W)
+        mask_np = masks[0, 0].detach().cpu().numpy()  # shape (H, W)
 
-        grid_points, point_labels = build_grid_points(mask_np, grid_step=grid_step)
+        # Generate prompts
+        points, point_labels, bbxes = None, None, None
+        if prompt_type == "grid":
+            points, point_labels = build_grid_points(mask_np, grid_step=grid_step)
+        elif prompt_type == "random":
+            points, point_labels = generate_random_point_prompts(mask_np, num_pos_points=num_pos_points, f=3)
+        elif prompt_type == "bbx":
+            bbxes = generate_bbx_prompts(mask_np)
+        else:
+            raise ValueError("Unsupported prompt type. Choose 'grid', 'random', or 'bbx'.")
 
-        if len(grid_points) == 0:
+        #  Skip if no prompts are provided
+        if points is None and bbxes is None:
             continue
-
-        encoded_inputs = processor(
+        
+        encoded = processor(
             images=[img_np],
-            input_points=[grid_points.tolist()],     # Must be list of list of [y,x]
-            input_labels=[point_labels.tolist()],    # Must be list of list of 0/1
+            input_points=[points.tolist()] if points is not None else None,
+            input_labels=[point_labels.tolist()] if point_labels is not None else None,
+            input_boxes=[bbxes.tolist()] if bbxes is not None else None,
             return_tensors="pt"
         ).to(device)
+        
+        outputs = model(**encoded, multimask_output=False)
+        pred_masks = outputs.pred_masks  # [1, 1, 256, 256]
+        
+        # pred_masks = processor.image_processor.post_process_masks(
+        #     outputs.pred_masks,
+        #     encoded["original_sizes"],
+        #     encoded["reshaped_input_sizes"],
+        # )[0].float()    # [1, 1, H, W]
 
-        outputs = model(**encoded_inputs, multimask_output=False)
-        pred_masks = outputs.pred_masks  # shape [1, 1, 256, 256]
+        # Binarize the predicted masks. This is especially necessary for the MedSAM model that outputs
+        # a separate mask for each bounding box prompt
+        pred_masks = pred_masks.mean(dim=1, keepdim=True)  
 
-        # Ensure shape is [1, 1, H, W] for interpolation
-        if pred_masks.dim() == 3:
-            pred_masks = pred_masks.unsqueeze(1)
-        elif pred_masks.dim()  == 5:
-            pred_masks = pred_masks.squeeze(1) 
+        if pred_masks.shape != masks.shape:
+            # Ensure shape is [1, 1, H, W] for interpolation
+            # if pred_masks.dim() == 3:
+            #     print('here 333')
+            #     pred_masks = pred_masks.unsqueeze(1)
+            if pred_masks.dim()  == 5:
+                pred_masks = pred_masks.squeeze(2)
 
-        H, W = mask_np.shape
-        upscaled_mask = F.interpolate(
-            pred_masks,
-            size=(H, W),
-            mode="bilinear",
-            align_corners=False
-        )  # shape [1, 1, H, W]
-
-        pred_prob = torch.sigmoid(upscaled_mask)  
-        d_loss = dice_loss(pred_prob, masks)        
-        bce_loss = criterion_bce(pred_prob, masks)
-        loss = 0.5 * d_loss + 0.5 * bce_loss
-        # loss = d_loss
+            H, W = mask_np.shape
+            pred_masks = F.interpolate(
+                pred_masks,
+                size=(H, W),
+                mode="bilinear",
+                align_corners=False
+            )  # shape [1, 1, H, W]
+        d_loss = criterion_dce(pred_masks, masks)      
+        bce_loss = criterion_bce(pred_masks, masks)
+        # loss = 0.5 * d_loss + 0.5 * bce_loss
+        loss = d_loss
 
         optimizer.zero_grad()
         loss.backward()
@@ -182,67 +235,73 @@ def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, 
         epoch_loss += loss.item()
 
     epoch_loss /= len(dataloader)
-    print(f"[Epoch {epoch+1}] Train Dice Loss: {epoch_loss:.4f}")
+    print(f"[Epoch {epoch+1}] Train Loss: {epoch_loss:.4f}")
     writer.add_scalar('Train/Loss', epoch_loss, epoch)
 
 
-def validate(model, processor, dataloader, device, writer, epoch, grid_step=8):
+def validate(model, processor, dataloader, device, writer, epoch, model_name, grid_step=8, vis_dir=None, prompt_type="grid", num_pos_points=6):
     model.eval()
-    val_dice = 0.0
-    num_images = 0
+    dice_metric = DiceMetric(include_background=False, reduction="mean")
+    hd95_metric = HausdorffDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)
 
     with torch.no_grad():
-        for images, masks in tqdm(dataloader, desc="Valid", leave=False):
-            if images.shape[0] != 1:
-                raise ValueError("This example code assumes batch_size=1 for \
-                                 multi-point prompts.")
+        for idx, (image, mask, image_path) in enumerate(tqdm(dataloader, desc="Zero-shot Testing")):
+            if image.shape[0] != 1:
+                raise ValueError("Batch size must be 1")
 
-            images = images.to(device)  # [1, 3, H, W]
-            masks = masks.to(device)    # [1, 1, H, W]
+            image = image.to(device)        # [1, 3, H, W]
 
-            img_np = images[0].permute(1,2,0).cpu().numpy()
-            mask_np = masks[0, 0].cpu().numpy()
+            img_np = image[0].permute(1, 2, 0).cpu().numpy()
+            mask_np = mask[0, 0].numpy()    # [1, 1, H, W] -> [H, W]
 
-            grid_points, point_labels = build_grid_points(mask_np, 
-                                                         grid_step=grid_step)
-            if len(grid_points) == 0:
+            # Generate prompts
+            points, point_labels, bbxes = None, None, None
+            if prompt_type == "grid":
+                points, point_labels = build_grid_points(mask_np, grid_step=grid_step)
+            elif prompt_type == "random":
+                points, point_labels = generate_random_point_prompts(mask_np, num_pos_points=num_pos_points, f=3)
+            elif prompt_type == "bbx":
+                bbxes = generate_bbx_prompts(mask_np)
+            else:
+                raise ValueError("Unsupported prompt type. Choose 'grid', 'random', or 'bbx'.")
+
+            #  Skip if no prompts are provided
+            if points is None and bbxes is None:
                 continue
-
-            encoded_inputs = processor(
+            
+            encoded = processor(
                 images=[img_np],
-                input_points=[grid_points.tolist()],
-                input_labels=[point_labels.tolist()],
+                input_points=[points.tolist()] if points is not None else None,
+                input_labels=[point_labels.tolist()] if point_labels is not None else None,
+                input_boxes=[bbxes.tolist()] if bbxes is not None else None,
                 return_tensors="pt"
             ).to(device)
+            
+            with torch.no_grad():
+                outputs = model(**encoded, multimask_output=False)
+            
+            pred_masks = processor.image_processor.post_process_masks(
+                outputs.pred_masks.cpu(),
+                encoded["original_sizes"].cpu(),
+                encoded["reshaped_input_sizes"].cpu(),
+            )[0].float()    # [1, 1, H, W]
 
-            outputs = model(**encoded_inputs, multimask_output=False)
-            pred_masks = outputs.pred_masks  # [1, 1, 256, 256]
+            # Binarize the predicted masks. This is especially necessary for the MedSAM model that outputs
+            # a separate mask for each bounding box prompt
+            pred_masks = torch.any(pred_masks, dim=0, keepdim=True).float()  # [N, 1, H, W] -> [1, 1, H, W]
 
-            # Ensure shape is [1, 1, H, W] for interpolation
-            if pred_masks.dim() == 3:
-                pred_masks = pred_masks.unsqueeze(1)
-            elif pred_masks.dim()  == 5:
-                pred_masks = pred_masks.squeeze(1)  
+            dice_metric(y_pred=pred_masks, y=mask)
+            hd95_metric(y_pred=pred_masks, y=mask)
 
-            H, W = mask_np.shape
-            upscaled_mask = F.interpolate(
-                pred_masks,
-                size=(H, W),
-                mode="bilinear",
-                align_corners=False
-            )
-            pred_prob = torch.sigmoid(upscaled_mask)
+            if vis_dir:
+                visualize(image[0], mask[0], pred_masks[0], vis_dir+'/'+model_name+'/'+prompt_type, image_path[0], points, point_labels, bbxes)
 
-            pred_bin = (pred_prob > 0.5).float()
-            single_dice = 1.0 - dice_loss(pred_bin, masks).item()  
-            val_dice += single_dice
-            num_images += 1
+    avg_dice = dice_metric.aggregate().item() * 100
+    avg_hd95 = hd95_metric.aggregate().item()
 
-    if num_images > 0:
-        val_dice /= num_images
-    print(f"Validation Dice Score: {val_dice:.4f}")
-    writer.add_scalar('Validation/Dice', val_dice, epoch)
-    return val_dice
+    print(f"Average Zero-shot Dice Score: {avg_dice:.2f}")
+    print(f"Average Zero-shot HD95 Score: {avg_hd95:.2f}")    
+    return avg_dice, avg_hd95
 
 def save_model(model, optimizer, epoch, best_val_dice, checkpoint_path):
     torch.save({
@@ -295,12 +354,18 @@ def main():
                                     drop_last=True, num_workers=2)
 
     # Initialize model + processor
-    # model = SamModel.from_pretrained("facebook/sam-vit-huge").to(device)
-    # processor = SamProcessor.from_pretrained("facebook/sam-vit-huge")
-    # model.load_state_dict(torch.load('/projects/ovcare/users/elahe_ranjbari/SAM/bmeg591_nuclei_segmentation/runs/sam_experiment/sam_e49.pth')['model_state_dict'])
+
+    if args.model_name.lower() == "sam":
+        ckpt = "facebook/sam-vit-huge"
+    elif args.model_name.lower() == "medsam":
+        ckpt = "flaviagiammarino/medsam-vit-base"
+    else:
+        ckpt = "facebook/sam-vit-base"
     
-    model = SamModel.from_pretrained("flaviagiammarino/medsam-vit-base").to(device)
-    processor = SamProcessor.from_pretrained("flaviagiammarino/medsam-vit-base")
+    print(f"Using model weights from {ckpt}")
+    model = SamModel.from_pretrained("facebook/sam-vit-huge").to(device)
+    processor = SamProcessor.from_pretrained("facebook/sam-vit-huge" , do_rescale=False, do_resize=False)
+
 
     print(model)
 
@@ -323,29 +388,32 @@ def main():
     best_val_dice = 0.0
     model.to(device)
     model.train()
+    log_dir = os.path.join(args.log_dir, args.model_name, args.prompt_type)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     for epoch in range(args.epochs):
         train_one_epoch(
             model, processor, train_dataloader, criterion_bce, criterion_dce, optimizer, device, 
-            writer, epoch, grid_step=16  
+            writer, epoch, grid_step=32, prompt_type=args.prompt_type, num_pos_points=args.num_pos_points
         )
 
-        val_dice = validate(
-            model, processor, val_dataloader, device, writer, epoch,
-            grid_step=16
+        val_dice, _ = validate(
+            model, processor, val_dataloader, device, writer, epoch, args.model_name,
+            grid_step=32, vis_dir=args.vis_dir, prompt_type=args.prompt_type, num_pos_points=args.num_pos_points
         )
 
         if val_dice > best_val_dice:
             best_val_dice = val_dice
             save_model(model, optimizer, epoch, best_val_dice,
-                       os.path.join(args.log_dir, f'best_sam_e{epoch}.pth'))
+                       os.path.join(log_dir, f'best_sam_e{epoch}.pth'))
 
         if epoch % args.save_every == 0:
             save_model(model, optimizer, epoch, best_val_dice,
-                       os.path.join(args.log_dir, f'sam_e{epoch}.pth'))
+                       os.path.join(log_dir, f'sam_e{epoch}.pth'))
 
     writer.close()
     save_model(model, optimizer, args.epochs - 1, best_val_dice,
-               os.path.join(args.log_dir, 'last_sam.pth'))
+               os.path.join(log_dir, 'last_sam.pth'))
 
 
 if __name__ == "__main__":
