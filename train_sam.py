@@ -386,7 +386,7 @@ def main():
 
         val_dice, _ = validate(
             model, processor, val_dataloader, device, writer, epoch, args.model_name,
-            grid_step=32, vis_dir=args.vis_dir, prompt_type=args.prompt_type, num_pos_points=args.num_pos_points
+            grid_step=32, prompt_type=args.prompt_type, num_pos_points=args.num_pos_points
         )
 
         if val_dice > best_val_dice:
