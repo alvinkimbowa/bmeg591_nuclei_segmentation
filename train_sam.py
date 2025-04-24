@@ -166,20 +166,21 @@ def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, 
         # if images.shape[0] != 1:
         #     raise ValueError("This example code assumes batch_size=1 for multi-point prompts.")
 
-        images = images.to(device)  # shape [1, 3, H, W]
-        masks = masks.to(device)    # shape [1, 1, H, W]
-
-        img_np = images[0].permute(1,2,0).detach().cpu().numpy()  # shape (H, W, 3)
-        mask_np = masks[0, 0].detach().cpu().numpy()  # shape (H, W)
-
+        # Determine the number of instances in the mask
+        num_instances = ndimage.label(masks.squeeze().numpy())[1]
+        if num_instances > 100:
+            # Skip due to memory constraints
+            print(f"Skipping image {image_path[0]} due to too many instances: {num_instances}")
+            continue
+        
         # Generate prompts
         points, point_labels, bbxes = None, None, None
         if prompt_type == "grid":
-            points, point_labels = build_grid_points(mask_np, grid_step=grid_step)
+            points, point_labels = build_grid_points(masks.squeeze().numpy(), grid_step=grid_step)
         elif prompt_type == "random":
-            points, point_labels = generate_random_point_prompts(mask_np, num_pos_points=num_pos_points, f=3)
+            points, point_labels = generate_random_point_prompts(masks.squeeze().numpy(), num_pos_points=num_pos_points, f=3)
         elif prompt_type == "bbx":
-            bbxes = generate_bbx_prompts(mask_np)
+            bbxes = generate_bbx_prompts(masks.squeeze().numpy())
         else:
             raise ValueError("Unsupported prompt type. Choose 'grid', 'random', or 'bbx'.")
 
@@ -188,7 +189,7 @@ def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, 
             continue
         
         encoded = processor(
-            images=[img_np],
+            images=[images.squeeze(0).permute(1, 2, 0).numpy()],
             input_points=[points.tolist()] if points is not None else None,
             input_labels=[point_labels.tolist()] if point_labels is not None else None,
             input_boxes=[bbxes.tolist()] if bbxes is not None else None,
@@ -218,6 +219,8 @@ def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, 
         optimizer.step()
 
         epoch_loss += loss.item()
+
+        torch.cuda.empty_cache()
 
     epoch_loss /= len(dataloader)
     print(f"[Epoch {epoch+1}] Train Loss: {epoch_loss:.4f}")
