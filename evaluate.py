@@ -226,7 +226,11 @@ def main():
     model = SamModel.from_pretrained("facebook/sam-vit-huge").to(device)
     processor = SamProcessor.from_pretrained("facebook/sam-vit-huge" , do_rescale=False, do_resize=False)
 
-
+    if args.model_weights:
+        print(f"Loading model weights from {args.model_weights}")
+        state_dict = torch.load(args.model_weights, map_location=device)['model_state_dict']
+        model.load_state_dict(state_dict, strict=False)
+    
     test_sam_zeroshot(
         model=model,
         processor=processor,
