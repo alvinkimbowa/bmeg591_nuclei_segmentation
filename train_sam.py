@@ -200,7 +200,7 @@ def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, 
         pred_masks = outputs.pred_masks  # [1, 1, 256, 256]
         
         pred_masks = processor.image_processor.post_process_masks(
-            outputs.pred_masks,
+            outputs.pred_masks.cpu(),
             encoded["original_sizes"],
             encoded["reshaped_input_sizes"],
             binarize=False
