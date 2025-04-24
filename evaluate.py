@@ -82,7 +82,7 @@ def visualize(image, gt_mask, pred_mask, save_dir, file_name, points=None, point
 
     os.makedirs(save_dir, exist_ok=True)
 
-    plt.figure(figsize=(12, 8))  # Adjusted figure size for better legibility on paper
+    plt.figure(figsize=(4, 3))  # Adjusted figure size for better legibility on paper
 
     # Original image
     plt.subplot(1, 4, 1)
