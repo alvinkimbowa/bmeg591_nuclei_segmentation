@@ -198,31 +198,16 @@ def train_one_epoch(model, processor, dataloader, criterion_bce, criterion_dce, 
         outputs = model(**encoded, multimask_output=False)
         pred_masks = outputs.pred_masks  # [1, 1, 256, 256]
         
-        # pred_masks = processor.image_processor.post_process_masks(
-        #     outputs.pred_masks,
-        #     encoded["original_sizes"],
-        #     encoded["reshaped_input_sizes"],
-        # )[0].float()    # [1, 1, H, W]
+        pred_masks = processor.image_processor.post_process_masks(
+            outputs.pred_masks,
+            encoded["original_sizes"],
+            encoded["reshaped_input_sizes"],
+            binarize=False
+        )[0].float()    # [N, 1, H, W]
 
-        # Binarize the predicted masks. This is especially necessary for the MedSAM model that outputs
-        # a separate mask for each bounding box prompt
-        pred_masks = pred_masks.mean(dim=1, keepdim=True)  
+        # Combine all instances into one in case of bounding box prompts
+        pred_masks = pred_masks.max(dim=0, keepdim=True).values # [N, 1, H, W] -> [1, 1, H, W]
 
-        if pred_masks.shape != masks.shape:
-            # Ensure shape is [1, 1, H, W] for interpolation
-            # if pred_masks.dim() == 3:
-            #     print('here 333')
-            #     pred_masks = pred_masks.unsqueeze(1)
-            if pred_masks.dim()  == 5:
-                pred_masks = pred_masks.squeeze(2)
-
-            H, W = mask_np.shape
-            pred_masks = F.interpolate(
-                pred_masks,
-                size=(H, W),
-                mode="bilinear",
-                align_corners=False
-            )  # shape [1, 1, H, W]
         d_loss = criterion_dce(pred_masks, masks)      
         bce_loss = criterion_bce(pred_masks, masks)
         # loss = 0.5 * d_loss + 0.5 * bce_loss
@@ -286,8 +271,7 @@ def validate(model, processor, dataloader, device, writer, epoch, model_name, gr
                 encoded["reshaped_input_sizes"].cpu(),
             )[0].float()    # [1, 1, H, W]
 
-            # Binarize the predicted masks. This is especially necessary for the MedSAM model that outputs
-            # a separate mask for each bounding box prompt
+            # Combine the predicted masks into a single binary mask. This is especially necessary for bounding box prompts
             pred_masks = torch.any(pred_masks, dim=0, keepdim=True).float()  # [N, 1, H, W] -> [1, 1, H, W]
 
             dice_metric(y_pred=pred_masks, y=mask)
