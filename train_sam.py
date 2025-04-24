@@ -389,11 +389,11 @@ def main():
         if val_dice > best_val_dice:
             best_val_dice = val_dice
             save_model(model, optimizer, epoch, best_val_dice,
-                       os.path.join(log_dir, f'best_sam_e{epoch}.pth'))
+                       os.path.join(log_dir, f'best_sam_best.pth'))
 
         if epoch % args.save_every == 0:
             save_model(model, optimizer, epoch, best_val_dice,
-                       os.path.join(log_dir, f'sam_e{epoch}.pth'))
+                       os.path.join(log_dir, f'sam_last.pth'))
 
     writer.close()
     save_model(model, optimizer, args.epochs - 1, best_val_dice,
