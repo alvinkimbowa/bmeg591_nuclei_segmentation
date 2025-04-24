@@ -27,4 +27,5 @@ python zeroshot_sam.py \
     --prompt_type $prompt_type \
     --num_pos_points $num_pos_points \
     --vis_dir $vis_dir \
-    --model_name $model_name
+    --model_name $model_name \
+    --model_weights Models/MedSAM/bbx/sam_best.pth
