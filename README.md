@@ -38,6 +38,7 @@ bash run_evaluation.sh \
  --data_dir : root folder of your dataset
 ```
 which arguments are as follows: 
+
 --batch_size : number of images per batch
 
 --prompt_type : one of grid, random, bounding_box
@@ -46,13 +47,7 @@ which arguments are as follows:
 
 --vis_dir : where to save the output visualizations
 
---model_name : which SAM variant to use:
-
-basesam (Base SAM)
-
-medsam (MedSAM)
-
-hugesam (HugeSAM)
+--model_name : which SAM variant to use: basesam (Base SAM), medsam (MedSAM), or sam (HugeSAM)
 
 --model_weights : path to the pretrained SAM weights (e.g. Models/MedSAM/bbx/sam_best.pth)
 
